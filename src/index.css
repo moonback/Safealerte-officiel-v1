@@ -1,0 +1,36 @@
+@import "leaflet/dist/leaflet.css";
+@import "tailwindcss";
+
+@theme {
+  --color-safe-dark: #0D0D0D;
+  --color-safe-card: #1A1A1A;
+  --color-safe-border: #2C2C2C;
+  --color-safe-red: #E53935;
+  --color-safe-red-hover: #D32F2F;
+  --color-safe-green: #4CAF50;
+  --color-safe-blue: #2196F3;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background-color: var(--color-safe-dark);
+  color: #FFFFFF;
+  margin: 0;
+  font-family: var(--font-sans);
+}
+
+/* Hide scrollbar for cleaner mobile look */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* Leaflet Dark Mode Overrides */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--color-safe-card) !important;
+  color: white !important;
+  border: 1px solid var(--color-safe-border);
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+}
