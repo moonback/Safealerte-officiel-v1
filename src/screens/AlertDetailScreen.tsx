@@ -3,6 +3,20 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Share2, AlertTriangle, Car, Calendar, MapPin, Search, Eye, MessageSquare, ShieldAlert } from 'lucide-react';
 import { useAlerts } from '../hooks/useAlerts';
 import { supabase } from '../lib/supabase';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+
+const alertLocationIcon = new L.DivIcon({
+  html: `<div class="relative flex h-8 w-8">
+           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-safe-red opacity-75"></span>
+           <span class="relative flex items-center justify-center rounded-full h-8 w-8 bg-safe-red border-2 border-white shadow-lg">
+             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+           </span>
+         </div>`,
+  className: '',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+});
 
 export default function AlertDetailScreen() {
   const navigate = useNavigate();
@@ -158,6 +172,29 @@ export default function AlertDetailScreen() {
               <div>
                 <span className="text-gray-400">Dernière localisation connue :</span>
                 <p className="font-bold text-white mt-1 pl-0">{alert.location}</p>
+              </div>
+            </div>
+            
+            {/* Dynamic Map displaying alert GPS location */}
+            <div className="h-44 bg-safe-card border border-safe-border rounded-2xl overflow-hidden relative shadow-inner z-10 mt-4">
+              <MapContainer 
+                center={[alert.coordinates.lat, alert.coordinates.lng]} 
+                zoom={14} 
+                style={{ height: '100%', width: '100%', background: '#0a0a0a' }}
+                zoomControl={false}
+                scrollWheelZoom={false}
+              >
+                <TileLayer
+                  attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                />
+                <Marker 
+                  position={[alert.coordinates.lat, alert.coordinates.lng]}
+                  icon={alertLocationIcon}
+                />
+              </MapContainer>
+              <div className="absolute bottom-2 left-2 z-[400] bg-black/60 backdrop-blur-sm text-[10px] font-mono text-gray-300 px-2 py-1 rounded border border-white/5 pointer-events-none">
+                {alert.coordinates.lat.toFixed(5)}, {alert.coordinates.lng.toFixed(5)}
               </div>
             </div>
           </div>
