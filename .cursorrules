@@ -1,0 +1,45 @@
+{
+  "projectContext": {
+    "description": "Safe Alert is a real-time crisis management and citizen reporting application aimed at coordinating searches for missing persons (abductions, vulnerable individuals).",
+    "features": ["Real-time alerts", "Citizen geolocation reporting", "Live admin map tracking", "Team operational chat"],
+    "targetAudience": "General public (mobile PWA view) and crisis authorities (Desktop Admin dashboard)"
+  },
+  "techStack": {
+    "frontend": ["React 19", "Vite", "TypeScript", "React Router v7"],
+    "styling": ["Tailwind CSS v4", "Lucide React", "Framer Motion"],
+    "mapping": ["Leaflet", "React-Leaflet", "Nominatim (OpenStreetMap)"],
+    "backend": ["Supabase (Auth, PostgreSQL DB, Storage, Realtime)"]
+  },
+  "codeStyle": {
+    "naming": {
+      "files": "PascalCase for components (e.g. `MapScreen.tsx`), camelCase for hooks and utils (e.g. `useAlerts.ts`)",
+      "variables": "camelCase",
+      "constants": "UPPER_SNAKE_CASE"
+    },
+    "components": "Use Functional Components with React Hooks. Avoid Class Components.",
+    "stateManagement": "Use React local state (`useState`, `useReducer`) and Context (`useContext`). Async remote state is fetched via custom hooks wrapping the Supabase client."
+  },
+  "architecture": {
+    "frontend": {
+      "screens": "Views mapped to routes (located in `/src/screens/`).",
+      "components": "Reusable UI chunks (located in `/src/components/`).",
+      "hooks": "Data fetching and complex logic isolation (located in `/src/hooks/`).",
+      "lib": "External service initialization (e.g. `supabase.ts` in `/src/lib/`)."
+    },
+    "backend": "No custom Node.js server. Business logic and security are handled directly via PostgreSQL RLS (Row Level Security) inside Supabase."
+  },
+  "bestPractices": {
+    "errorHandling": "Wrap async operations in try/catch blocks. Show user-friendly error toasts/messages. Log technical details to console.",
+    "typeSafety": "Use TypeScript strictly. Define `interfaces` for database rows (e.g. `AlertData`, `ReportData`). Avoid `any`.",
+    "security": "Never hardcode API keys. Use `import.meta.env` for Supabase URL and Anon Key. Rely on Supabase RLS for authorization checks.",
+    "styling": "Use Tailwind CSS utility classes. Prefer CSS Grid/Flexbox for layouts. Use the predefined Safe Alert color palette (`safe-red`, `safe-dark`, `safe-card`)."
+  },
+  "commonTasks": {
+    "newFeature": "1. Add route in `App.tsx`. 2. Create Screen component. 3. Build UI with Tailwind. 4. Connect to Supabase if needed via a custom hook.",
+    "databaseChanges": "Update the SQL schema in `supabase-schema-phase-1.sql`, then reflect the changes in TypeScript interfaces.",
+    "realtime": "Use `supabase.channel()` to subscribe to `postgres_changes`. Remember to unsubscribe in the `useEffect` cleanup function."
+  },
+  "dependenciesToFavor": "Use Lucide for icons. Use Framer Motion for complex animations (avoid raw CSS animations if state-dependent). Use React-Leaflet for any map interactions.",
+  "thingsToAvoid": ["Avoid using Google Maps API (stick to Leaflet/OSM to keep it free and open)", "Avoid adding heavy state management libraries like Redux (React Context + Hooks are sufficient)", "Avoid raw CSS files unless for global resets (`index.css`)"],
+  "documentation": "Comment complex business logic (e.g., GPS distance calculations, Realtime channel management). Keep component render functions clean."
+}
