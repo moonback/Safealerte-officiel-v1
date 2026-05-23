@@ -12,6 +12,8 @@ import { supabase } from '../lib/supabase';
 import { useAlerts, AlertData } from '../hooks/useAlerts';
 import MapScreen from './MapScreen';
 import AdminLayout from '../components/AdminLayout';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 
 export default function AdminDashboardScreen() {
   const navigate = useNavigate();
@@ -83,7 +85,7 @@ export default function AdminDashboardScreen() {
     <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
       <div className="p-4 lg:p-8 flex-1 flex flex-col h-full w-full">
         {activeTab === 'dashboard' && (
-          <AdminDashboardView stats={stats} activities={activities} />
+          <AdminDashboardView stats={stats} activities={activities} onOpenMap={() => setActiveTab('map')} />
         )}
         {activeTab === 'alerts' && (
           <AdminAlertsView />
@@ -104,7 +106,174 @@ export default function AdminDashboardScreen() {
   );
 }
 
-function AdminDashboardView({ stats, activities }: any) {
+// ─── Custom icon for dashboard mini-map ─────────────────────
+const dashAlertIcon = new L.DivIcon({
+  html: `<div style="position:relative;display:flex;width:32px;height:32px">
+    <span style="position:absolute;display:inline-flex;width:100%;height:100%;border-radius:50%;background:rgba(229,57,53,0.5);animation:ping 1.5s cubic-bezier(0,0,.2,1) infinite"></span>
+    <span style="position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:#e53935;border:2px solid white;box-shadow:0 4px 12px rgba(229,57,53,0.6)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </span>
+  </div>`,
+  className: '',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+});
+
+const dashResolvedIcon = new L.DivIcon({
+  html: `<div style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#22c55e;border:2px solid white;box-shadow:0 2px 8px rgba(34,197,94,0.4)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>`,
+  className: '',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+// ─── Dashboard Map Card ──────────────────────────────────────
+function DashboardMapCard({ stats, onOpenMap }: { stats: any; onOpenMap: () => void }) {
+  const { alerts } = useAlerts();
+  const [reports, setReports] = useState<any[]>([]);
+  const [tick, setTick] = useState(0);
+
+  // Refresh time indicator every minute
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    supabase.from('reports').select('latitude, longitude, report_type, created_at').not('latitude', 'is', null).then(({ data }) => {
+      if (data) setReports(data);
+    });
+  }, []);
+
+  const activeAlerts  = alerts.filter(a => a.status === 'EN COURS');
+  const resolvedAlerts = alerts.filter(a => a.status !== 'EN COURS');
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="xl:col-span-2 bg-safe-card border border-safe-border rounded-3xl flex flex-col min-h-[420px] overflow-hidden">
+      {/* Header */}
+      <div className="flex justify-between items-center px-6 py-4 border-b border-safe-border shrink-0">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <MapIcon size={20} className="text-safe-red" />
+          Aperçu Cartographique
+        </h2>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-green-400">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-ping" />
+            LIVE · {timeStr}
+          </span>
+          <button
+            onClick={onOpenMap}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-safe-red/10 text-safe-red hover:bg-safe-red/20 border border-safe-red/20 rounded-xl transition-colors"
+          >
+            <Eye size={13} />
+            Plein écran
+          </button>
+        </div>
+      </div>
+
+      {/* Map */}
+      <div className="relative flex-1 min-h-[320px]">
+        <MapContainer
+          center={[46.603354, 1.888334]}
+          zoom={6}
+          style={{ height: '100%', width: '100%', minHeight: '320px', background: '#0a0a0a' }}
+          zoomControl={false}
+          scrollWheelZoom={false}
+          dragging={true}
+          attributionControl={false}
+        >
+          {/* Satellite tile */}
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            attribution=""
+          />
+
+          {/* Active alerts — animated red */}
+          {activeAlerts.map(alert => (
+            <Marker
+              key={alert.id}
+              position={[alert.coordinates.lat, alert.coordinates.lng]}
+              icon={dashAlertIcon}
+            >
+              <Popup>
+                <div style={{ minWidth: 160, background: '#1a1a1a', color: 'white', borderRadius: 12, padding: '10px 12px', border: '1px solid #333' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <img src={alert.photoUrl} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} />
+                    <div>
+                      <p style={{ fontWeight: 700, fontSize: 13, margin: 0 }}>{alert.name}</p>
+                      <p style={{ fontSize: 11, color: '#f87171', fontWeight: 600, margin: 0 }}>🔴 EN COURS</p>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#9ca3af', margin: 0 }}>📍 {alert.location}</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+          {/* Resolved alerts — green */}
+          {resolvedAlerts.map(alert => (
+            <Marker
+              key={alert.id + '_r'}
+              position={[alert.coordinates.lat, alert.coordinates.lng]}
+              icon={dashResolvedIcon}
+            >
+              <Popup>
+                <div style={{ minWidth: 140, background: '#1a1a1a', color: 'white', borderRadius: 12, padding: '8px 12px', border: '1px solid #333' }}>
+                  <p style={{ fontWeight: 700, fontSize: 12, margin: 0 }}>{alert.name}</p>
+                  <p style={{ fontSize: 11, color: '#4ade80', margin: '2px 0 0' }}>✅ RÉSOLUE</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+
+        {/* Stats overlay — bottom-left */}
+        <div style={{
+          position: 'absolute', bottom: 12, left: 12, zIndex: 1000,
+          display: 'flex', gap: 8, pointerEvents: 'none',
+        }}>
+          <div style={{ background: 'rgba(229,57,53,0.9)', backdropFilter: 'blur(8px)', borderRadius: 12, padding: '6px 12px', border: '1px solid rgba(255,255,255,0.15)' }}>
+            <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>En cours</p>
+            <p style={{ fontSize: 20, fontWeight: 900, color: 'white', margin: 0, lineHeight: 1.1 }}>{activeAlerts.length}</p>
+          </div>
+          <div style={{ background: 'rgba(34,197,94,0.85)', backdropFilter: 'blur(8px)', borderRadius: 12, padding: '6px 12px', border: '1px solid rgba(255,255,255,0.15)' }}>
+            <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>Résolues</p>
+            <p style={{ fontSize: 20, fontWeight: 900, color: 'white', margin: 0, lineHeight: 1.1 }}>{resolvedAlerts.length}</p>
+          </div>
+          <div style={{ background: 'rgba(59,130,246,0.85)', backdropFilter: 'blur(8px)', borderRadius: 12, padding: '6px 12px', border: '1px solid rgba(255,255,255,0.15)' }}>
+            <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>Signalements</p>
+            <p style={{ fontSize: 20, fontWeight: 900, color: 'white', margin: 0, lineHeight: 1.1 }}>{reports.length}</p>
+          </div>
+        </div>
+
+        {/* Legend — top-right */}
+        <div style={{
+          position: 'absolute', top: 12, right: 12, zIndex: 1000,
+          background: 'rgba(10,10,10,0.85)', backdropFilter: 'blur(8px)',
+          borderRadius: 12, padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)',
+          pointerEvents: 'none',
+        }}>
+          <p style={{ fontSize: 9, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 6px' }}>Légende</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block', boxShadow: '0 0 6px rgba(239,68,68,0.8)' }} />
+              <span style={{ fontSize: 11, color: '#d1d5db' }}>Alerte active</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+              <span style={{ fontSize: 11, color: '#d1d5db' }}>Résolue</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboardView({ stats, activities, onOpenMap }: any) {
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 lg:gap-6 mb-8">
@@ -115,18 +284,8 @@ function AdminDashboardView({ stats, activities }: any) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Live Map (Placeholder) */}
-        <div className="xl:col-span-2 bg-safe-card border border-safe-border rounded-3xl p-6 flex flex-col min-h-[400px]">
-           <div className="flex justify-between items-center mb-6">
-             <h2 className="text-lg font-bold flex items-center gap-2"><MapIcon size={20} className="text-safe-red"/> Aperçu Cartographique</h2>
-             <span className="px-3 py-1 bg-safe-red/10 text-safe-red rounded-full text-xs font-bold animate-pulse">EN DIRECT</span>
-           </div>
-           
-           <div className="flex-1 bg-black rounded-2xl border border-safe-border relative overflow-hidden flex items-center justify-center">
-             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at center, #666 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
-             <span className="text-gray-600 font-mono">Module Cartographie Active</span>
-           </div>
-        </div>
+        {/* Live Map — Real Leaflet */}
+        <DashboardMapCard stats={stats} onOpenMap={onOpenMap} />
 
         {/* Recent Activity Feed */}
         <div className="bg-safe-card border border-safe-border rounded-3xl p-6 shadow-lg overflow-y-auto max-h-[500px]">
