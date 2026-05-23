@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, Bell, Users, Map as MapIcon, MessageSquare, BarChart, Settings, Clock, Activity, Search, ChevronRight, Edit2, Trash2 } from 'lucide-react';
+import { Shield, Bell, Users, Map as MapIcon, MapPin, MessageSquare, BarChart, Settings, Clock, Activity, Search, ChevronRight, Edit2, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../hooks/useAlerts';
 import MapScreen from './MapScreen';
@@ -205,13 +205,12 @@ function AdminAlertsView() {
 function AdminReportsView() {
   const [reports, setReports] = useState<any[]>([]);
   useEffect(() => {
-    supabase.from('reports').select('*, profiles:user_id(name)').order('created_at', { ascending: false }).then(({data}) => {
+    supabase.from('reports').select('*, profiles:user_id(name), alerts:alert_id(victim_name)').order('created_at', { ascending: false }).then(({data}) => {
       if (data) {
         const mapped = data.map(r => {
-          const mediaMatch = r.description?.match(/Media: (https:\/\/[^\s]+)/);
-          const mediaUrl = mediaMatch ? mediaMatch[1].trim() : null;
-          const cleanDescription = r.description ? r.description.replace(/Media: https:\/\/[^\s]+/, '').trim() : '';
-          return { ...r, media_url: mediaUrl, clean_description: cleanDescription };
+          const mediaUrls = [...(r.description || '').matchAll(/https:\/\/[^\s]+/g)].map(m => m[0]);
+          const cleanDescription = r.description ? r.description.replace(/Medias?:[\s\S]*?(?=https:\/\/|$)/, '').replace(/(https:\/\/[^\s]+\s*)+/, '').trim() : '';
+          return { ...r, media_urls: mediaUrls, clean_description: cleanDescription };
         });
         setReports(mapped);
       }
@@ -221,19 +220,57 @@ function AdminReportsView() {
   return (
     <div className="bg-safe-card border border-safe-border rounded-3xl p-6 overflow-y-auto">
       <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><MessageSquare className="text-blue-500" /> Flux des Signalements</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
         {reports.map(report => (
-          <div key={report.id} className="bg-safe-dark border border-safe-border rounded-2xl p-4 flex flex-col gap-3">
-             <div className="flex justify-between items-start">
+          <div key={report.id} className="bg-safe-dark border border-safe-border rounded-2xl p-5 flex flex-col gap-4 hover:border-blue-500/50 transition-colors">
+             <div className="flex justify-between items-start border-b border-safe-border pb-3">
                <div>
-                  <span className="text-xs font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded uppercase">{report.report_type}</span>
-                  <p className="text-xs text-gray-400 mt-1">{new Date(report.created_at).toLocaleString()}</p>
+                  <div className="flex gap-2 items-center mb-1">
+                    <span className="text-xs font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded uppercase flex items-center gap-1"><Activity size={12} /> {report.report_type}</span>
+                    {report.alerts && (
+                       <Link to={`/alert/${report.alert_id}`} className="text-xs font-bold text-safe-red bg-safe-red/10 px-2 py-0.5 rounded uppercase hover:bg-safe-red/20 transition-colors">
+                         Alerte: {report.alerts.victim_name}
+                       </Link>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 flex items-center gap-1"><Clock size={12} /> {new Date(report.created_at).toLocaleString()}</p>
                </div>
-               <span className="text-sm font-bold text-white">{report.profiles?.name || 'Anonyme'}</span>
+               <div className="flex items-center gap-2">
+                 <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs uppercase">
+                   {(report.profiles?.name || 'A').charAt(0)}
+                 </div>
+                 <span className="text-sm font-bold text-white">{report.profiles?.name || 'Anonyme'}</span>
+               </div>
              </div>
-             {report.media_url && <img src={report.media_url} alt="" className="w-full h-32 object-cover rounded-xl" />}
-             {report.location && <p className="text-sm text-gray-300 font-mono bg-black/30 p-2 rounded-lg">{report.location}</p>}
-             {report.clean_description && <p className="text-sm text-white italic">"{report.clean_description}"</p>}
+             
+             {report.media_urls && report.media_urls.length > 0 && (
+               <div className={`grid gap-2 ${report.media_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                 {report.media_urls.map((url: string, i: number) => (
+                    <img key={i} src={url} alt={`Media ${i}`} className="w-full h-40 object-cover rounded-xl border border-safe-border" />
+                 ))}
+               </div>
+             )}
+             
+             {report.clean_description && (
+               <div className="bg-black/30 p-4 rounded-xl border border-white/5">
+                 <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">{report.clean_description}</p>
+               </div>
+             )}
+
+             <div className="flex flex-wrap gap-2 mt-auto pt-2">
+               {report.location && (
+                 <div className="text-xs text-gray-300 font-mono bg-safe-card border border-safe-border px-3 py-1.5 rounded-lg flex items-center gap-2">
+                   <MapIcon size={12} className="text-gray-500" />
+                   {report.location}
+                 </div>
+               )}
+               {report.latitude && report.longitude && (
+                 <a href={`https://maps.google.com/?q=${report.latitude},${report.longitude}`} target="_blank" rel="noreferrer" className="text-xs text-blue-400 font-mono bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-colors flex items-center gap-2">
+                   <MapPin size={12} />
+                   Voir sur la carte
+                 </a>
+               )}
+             </div>
           </div>
         ))}
       </div>
