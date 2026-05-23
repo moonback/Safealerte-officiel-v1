@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, User, Car, Eye, HelpCircle, MapPin, Map, Camera, FileVideo, Upload } from 'lucide-react';
+import { ArrowLeft, User, Car, Eye, HelpCircle, MapPin, Map, Camera, FileVideo, Upload, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -199,6 +199,59 @@ function Step2({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const markerRef = useRef<any>(null);
 
+  // Address search & autocomplete states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+
+  // Fetch address suggestions from Nominatim (debounced)
+  useEffect(() => {
+    if (searchQuery.trim().length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    if (searchQuery === selectedName) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsLoadingSuggestions(true);
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            searchQuery
+          )}&limit=5&accept-language=fr`,
+          {
+            headers: {
+              'User-Agent': 'SafeAlerte-App'
+            }
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setSuggestions(data);
+        }
+      } catch (err) {
+        console.error("Error fetching suggestions:", err);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedName]);
+
+  const handleSelectSuggestion = (sug: any) => {
+    const lat = parseFloat(sug.lat);
+    const lng = parseFloat(sug.lon);
+    setCoords({ lat, lng });
+    setSelectedName(sug.display_name);
+    setSearchQuery(sug.display_name);
+    setSuggestions([]);
+  };
+
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
       setErrorMsg("La géolocalisation n'est pas supportée par votre navigateur.");
@@ -215,6 +268,8 @@ function Step2({
           lng: position.coords.longitude
         });
         setIsLocating(false);
+        setSelectedName(null);
+        setSearchQuery("");
       },
       (error) => {
         console.error("Geolocation error:", error);
@@ -243,6 +298,9 @@ function Step2({
         if (marker != null) {
           const latLng = marker.getLatLng();
           setCoords({ lat: latLng.lat, lng: latLng.lng });
+          // Clear current search address selection since user dragged the pin
+          setSelectedName(null);
+          setSearchQuery('');
         }
       },
     }),
@@ -254,6 +312,7 @@ function Step2({
       <h2 className="text-2xl font-bold mb-2">Où ?</h2>
       <p className="text-gray-400 text-sm mb-6">Indiquez l'endroit précis de votre observation.</p>
       
+      {/* Geolocation Button */}
       <div className="space-y-4 mb-6">
         <button 
           onClick={handleGetCurrentLocation}
@@ -290,12 +349,61 @@ function Step2({
         )}
       </div>
 
+      {/* Address Search with Autocomplete */}
+      <div className="relative mb-6">
+        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Rechercher une adresse</label>
+        <div className="relative">
+          <input 
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Ex: 8 Rue de la Paix, Paris..."
+            className="w-full bg-safe-card border border-safe-border rounded-2xl p-4 pl-11 pr-10 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-safe-red transition-all shadow-inner"
+          />
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          
+          {searchQuery && (
+            <button 
+              onClick={() => { setSearchQuery(''); setSuggestions([]); setSelectedName(null); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors cursor-pointer bg-transparent border-0 p-1 flex items-center justify-center rounded-full hover:bg-white/10"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Suggestion list */}
+        {isLoadingSuggestions && (
+          <div className="absolute left-0 right-0 top-full mt-2 bg-safe-card border border-safe-border rounded-2xl p-4 z-50 shadow-2xl flex items-center justify-center gap-2.5 text-xs text-gray-400 backdrop-blur-md bg-safe-card/95">
+            <div className="w-4 h-4 border-2 border-safe-red border-t-transparent rounded-full animate-spin" />
+            Recherche d'adresses en cours...
+          </div>
+        )}
+
+        {!isLoadingSuggestions && suggestions.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-2 bg-safe-card border border-safe-border rounded-2xl z-50 shadow-2xl overflow-hidden divide-y divide-safe-border/30 max-h-60 overflow-y-auto backdrop-blur-md bg-safe-card/95">
+            {suggestions.map((sug, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => handleSelectSuggestion(sug)}
+                className="w-full text-left p-4 hover:bg-white/5 transition-all text-xs text-gray-200 flex items-start gap-3 cursor-pointer"
+              >
+                <MapPin size={14} className="text-safe-red shrink-0 mt-0.5" />
+                <span>{sug.display_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Map selection */}
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Sélection sur la carte</span>
           {coords && (
             <button 
-              onClick={() => setCoords(null)}
+              onClick={() => { setCoords(null); setSearchQuery(''); setSelectedName(null); }}
               className="text-xs font-semibold text-safe-red hover:underline transition-all cursor-pointer"
             >
               Réinitialiser
@@ -320,7 +428,12 @@ function Step2({
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             
-            <MapEventsHandler onMapClick={(lat, lng) => setCoords({ lat, lng })} />
+            <MapEventsHandler onMapClick={(lat, lng) => {
+              setCoords({ lat, lng });
+              // Clear current search address selection since user clicked somewhere else
+              setSelectedName(null);
+              setSearchQuery('');
+            }} />
             <MapViewUpdater center={mapCenter} zoom={mapZoom} />
 
             {coords && (
@@ -339,7 +452,7 @@ function Step2({
       {coords && (
         <div className="bg-safe-card border border-safe-border rounded-xl p-3 flex items-center justify-between text-xs font-mono text-gray-400 mb-6">
           <span className="flex items-center gap-1.5"><MapPin size={12} className="text-safe-green" /> Coordonnées :</span>
-          <span className="text-white bg-black/40 px-2 py-1 rounded border border-white/5">
+          <span className="text-white bg-black/40 px-2 py-1 rounded border border-white/5 font-bold">
             {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
           </span>
         </div>
