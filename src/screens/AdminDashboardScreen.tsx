@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, Bell, Users, Map as MapIcon, MapPin, MessageSquare, BarChart, Settings, Clock, Activity, Search, ChevronRight, Edit2, Trash2 } from 'lucide-react';
+import {
+  Shield, Bell, Users, Map as MapIcon, MapPin, MessageSquare,
+  Clock, Activity, Search, ChevronRight, Edit2, Trash2,
+  Filter, SlidersHorizontal, CheckCircle2, AlertTriangle,
+  Eye, X, ArrowUpDown, ChevronDown, RefreshCw, Plus,
+  UserX, Car, Calendar, Crosshair, CheckSquare, Square,
+  ToggleLeft, ToggleRight, Radio, FileText
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAlerts } from '../hooks/useAlerts';
+import { useAlerts, AlertData } from '../hooks/useAlerts';
 import MapScreen from './MapScreen';
 import AdminLayout from '../components/AdminLayout';
 
@@ -148,58 +155,479 @@ function AdminDashboardView({ stats, activities }: any) {
   )
 }
 
+// ─── Danger level helpers ───────────────────────────────────
+const DANGER_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+  CRITIQUE: { label: 'CRITIQUE', color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/30',    dot: 'bg-red-500' },
+  ÉLEVÉ:    { label: 'ÉLEVÉ',    color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/30', dot: 'bg-orange-500' },
+  MOYEN:    { label: 'MOYEN',    color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/30', dot: 'bg-yellow-500' },
+  FAIBLE:   { label: 'FAIBLE',   color: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/30',  dot: 'bg-green-500' },
+};
+
+function DangerBadge({ level }: { level: string }) {
+  const cfg = DANGER_CONFIG[level?.toUpperCase()] ?? DANGER_CONFIG['MOYEN'];
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── Main Alert Management View ──────────────────────────────
 function AdminAlertsView() {
   const { alerts, loading, refetch } = useAlerts();
   const navigate = useNavigate();
-  if (loading) return <div className="flex justify-center p-10"><div className="animate-spin w-8 h-8 border-4 border-safe-red border-t-transparent rounded-full" /></div>;
-  
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'EN COURS' | 'RESOLUE'>('ALL');
+  const [dangerFilter, setDangerFilter] = useState<string>('ALL');
+  const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [sortField, setSortField] = useState<'name' | 'created_at' | 'dangerLevel'>('created_at');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [panelAlert, setPanelAlert] = useState<AlertData | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+
+  // ── Filtered & sorted list ──
+  const filtered = useMemo(() => {
+    const dangerOrder: Record<string, number> = { CRITIQUE: 0, ÉLEVÉ: 1, MOYEN: 2, FAIBLE: 3 };
+    return alerts
+      .filter(a => {
+        const q = search.toLowerCase();
+        const matchSearch = !q || a.name.toLowerCase().includes(q) || a.location.toLowerCase().includes(q);
+        const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
+        const matchDanger = dangerFilter === 'ALL' || (a.dangerLevel || '').toUpperCase() === dangerFilter;
+        const matchType = typeFilter === 'ALL' || a.type === typeFilter;
+        return matchSearch && matchStatus && matchDanger && matchType;
+      })
+      .sort((a, b) => {
+        let cmp = 0;
+        if (sortField === 'name') cmp = a.name.localeCompare(b.name);
+        else if (sortField === 'created_at') cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        else if (sortField === 'dangerLevel') cmp = (dangerOrder[a.dangerLevel?.toUpperCase()] ?? 2) - (dangerOrder[b.dangerLevel?.toUpperCase()] ?? 2);
+        return sortAsc ? cmp : -cmp;
+      });
+  }, [alerts, search, statusFilter, dangerFilter, typeFilter, sortField, sortAsc]);
+
+  // Summary counts
+  const enCours = alerts.filter(a => a.status === 'EN COURS').length;
+  const resolues = alerts.filter(a => a.status !== 'EN COURS').length;
+  const critiques = alerts.filter(a => (a.dangerLevel || '').toUpperCase() === 'CRITIQUE').length;
+
+  // ── Delete one ──
+  const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer cette alerte ?")) {
-      const { error } = await supabase.from('alerts').delete().eq('id', id);
-      if (error) {
-        alert("Erreur lors de la suppression.");
-        console.error(error);
-      } else {
-        if (refetch) refetch();
-      }
-    }
+    if (!window.confirm('Supprimer cette alerte définitivement ?')) return;
+    setDeletingIds(p => new Set(p).add(id));
+    await supabase.from('alerts').delete().eq('id', id);
+    setDeletingIds(p => { const n = new Set(p); n.delete(id); return n; });
+    if (panelAlert?.id === id) setPanelAlert(null);
+    refetch?.();
+  }, [panelAlert, refetch]);
+
+  // ── Bulk delete ──
+  const handleBulkDelete = useCallback(async () => {
+    if (!selectedIds.size || !window.confirm(`Supprimer ${selectedIds.size} alerte(s) ?`)) return;
+    await supabase.from('alerts').delete().in('id', [...selectedIds]);
+    setSelectedIds(new Set());
+    refetch?.();
+  }, [selectedIds, refetch]);
+
+  // ── Status toggle ──
+  const handleToggleStatus = useCallback(async (e: React.MouseEvent, alert: AlertData) => {
+    e.stopPropagation();
+    const newStatus = alert.status === 'EN COURS' ? 'RESOLUE' : 'EN COURS';
+    setTogglingId(alert.id);
+    await supabase.from('alerts').update({ status: newStatus }).eq('id', alert.id);
+    setTogglingId(null);
+    refetch?.();
+    if (panelAlert?.id === alert.id) setPanelAlert({ ...panelAlert, status: newStatus });
+  }, [panelAlert, refetch]);
+
+  // ── Sort toggle ──
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) setSortAsc(a => !a);
+    else { setSortField(field); setSortAsc(true); }
   };
 
-  const handleEdit = (e: React.MouseEvent, id: string) => {
+  // ── Selection ──
+  const toggleSelect = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    navigate(`/admin/edit-alert/${id}`);
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(a => a.id)));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin w-10 h-10 border-4 border-safe-red border-t-transparent rounded-full" />
+          <p className="text-gray-400 text-sm">Chargement des alertes...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-safe-card border border-safe-border rounded-3xl p-6 overflow-y-auto">
-      <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Bell className="text-safe-red" /> Gestion des Alertes</h2>
-      <div className="space-y-4">
-        {alerts.map(alert => (
-          <div key={alert.id} onClick={() => navigate(`/alert/${alert.id}`)} className="flex items-center justify-between p-4 bg-safe-dark border border-safe-border rounded-2xl cursor-pointer hover:border-safe-red transition-colors group">
-            <div className="flex gap-4 items-center">
-              <img src={alert.photoUrl} alt="" className="w-12 h-12 rounded-xl object-cover" />
-              <div>
-                <h3 className="font-bold text-white text-lg">{alert.name}</h3>
-                <p className="text-sm text-gray-400">{alert.location}</p>
+    <div className="flex gap-6 h-full relative">
+      {/* ── Main Panel ── */}
+      <div className={`flex-1 flex flex-col gap-4 min-w-0 transition-all duration-300 ${panelAlert ? 'lg:mr-96' : ''}`}>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'En cours', value: enCours, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', dot: 'bg-red-500 animate-pulse' },
+            { label: 'Résolues', value: resolues, color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20', dot: 'bg-green-500' },
+            { label: 'Critiques', value: critiques, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' },
+          ].map(c => (
+            <div key={c.label} className={`${c.bg} border rounded-2xl p-4 flex flex-col gap-1`}>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                <span className="text-xs text-gray-400 font-medium">{c.label}</span>
               </div>
+              <span className={`text-3xl font-black ${c.color}`}>{c.value}</span>
             </div>
-            <div className="flex items-center gap-4">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${alert.status === 'EN COURS' ? 'bg-safe-red/20 text-safe-red' : 'bg-gray-800 text-gray-400'}`}>{alert.status}</span>
-              <div className="flex items-center gap-2">
-                <button onClick={(e) => handleEdit(e, alert.id)} className="p-2 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500/20 transition-colors" title="Modifier">
-                  <Edit2 size={16} />
-                </button>
-                <button onClick={(e) => handleDelete(e, alert.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors" title="Supprimer">
-                  <Trash2 size={16} />
-                </button>
-              </div>
+          ))}
+        </div>
+
+        {/* Toolbar */}
+        <div className="bg-safe-card border border-safe-border rounded-2xl p-3 flex flex-wrap gap-3 items-center">
+          {/* Search */}
+          <div className="relative flex-1 min-w-48">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher par nom, lieu..."
+              className="w-full bg-safe-dark border border-safe-border rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-safe-red transition-colors"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex rounded-xl overflow-hidden border border-safe-border bg-safe-dark">
+            {(['ALL', 'EN COURS', 'RESOLUE'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-2 text-xs font-semibold transition-colors ${statusFilter === s ? 'bg-safe-red text-white' : 'text-gray-400 hover:text-white'}`}
+              >
+                {s === 'ALL' ? 'Tous' : s === 'EN COURS' ? 'En cours' : 'Résolues'}
+              </button>
+            ))}
+          </div>
+
+          {/* Danger Filter */}
+          <select
+            value={dangerFilter}
+            onChange={e => setDangerFilter(e.target.value)}
+            className="bg-safe-dark border border-safe-border text-sm text-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:border-safe-red cursor-pointer"
+          >
+            <option value="ALL">Tous niveaux</option>
+            <option value="CRITIQUE">CRITIQUE</option>
+            <option value="ÉLEVÉ">ÉLEVÉ</option>
+            <option value="MOYEN">MOYEN</option>
+            <option value="FAIBLE">FAIBLE</option>
+          </select>
+
+          {/* Type Filter */}
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            className="bg-safe-dark border border-safe-border text-sm text-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:border-safe-red cursor-pointer"
+          >
+            <option value="ALL">Tous types</option>
+            <option value="missing_person">Disparition</option>
+            <option value="child_abduction">Enlèvement</option>
+          </select>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={() => refetch?.()} title="Rafraîchir" className="p-2 rounded-xl bg-safe-dark border border-safe-border text-gray-400 hover:text-white hover:border-gray-500 transition-colors">
+              <RefreshCw size={15} />
+            </button>
+            <button onClick={() => navigate('/admin/new-alert')} className="flex items-center gap-2 bg-safe-red hover:bg-red-500 transition-colors text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg shadow-safe-red/20">
+              <Plus size={14} />
+              Nouvelle alerte
+            </button>
+          </div>
+        </div>
+
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="bg-red-600/10 border border-red-500/30 rounded-2xl px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-red-400 font-semibold">{selectedIds.size} alerte(s) sélectionnée(s)</span>
+            <div className="flex gap-2">
+              <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded-lg border border-safe-border transition-colors">Annuler</button>
+              <button onClick={handleBulkDelete} className="text-xs text-white bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors">
+                <Trash2 size={12} /> Supprimer la sélection
+              </button>
             </div>
           </div>
-        ))}
+        )}
+
+        {/* Table header */}
+        {filtered.length > 0 && (
+          <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3 px-4 py-2 text-[10px] text-gray-500 uppercase tracking-widest font-bold items-center">
+            <button onClick={toggleSelectAll} className="text-gray-500 hover:text-white transition-colors">
+              {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare size={15} className="text-safe-red" /> : <Square size={15} />}
+            </button>
+            <button onClick={() => handleSort('name')} className="flex items-center gap-1 hover:text-gray-300 transition-colors text-left">
+              Nom / Lieu <ArrowUpDown size={10} className={sortField === 'name' ? 'text-safe-red' : ''} />
+            </button>
+            <button onClick={() => handleSort('dangerLevel')} className="flex items-center gap-1 hover:text-gray-300 transition-colors">
+              Danger <ArrowUpDown size={10} className={sortField === 'dangerLevel' ? 'text-safe-red' : ''} />
+            </button>
+            <span>Statut</span>
+            <button onClick={() => handleSort('created_at')} className="flex items-center gap-1 hover:text-gray-300 transition-colors">
+              Date <ArrowUpDown size={10} className={sortField === 'created_at' ? 'text-safe-red' : ''} />
+            </button>
+            <span>Actions</span>
+          </div>
+        )}
+
+        {/* Alert rows */}
+        <div className="space-y-2 overflow-y-auto flex-1">
+          {filtered.length === 0 ? (
+            <div className="text-center py-16 text-gray-500 flex flex-col items-center gap-3">
+              <UserX size={40} className="text-gray-700" />
+              <p className="text-sm">Aucune alerte trouvée</p>
+              {(search || statusFilter !== 'ALL' || dangerFilter !== 'ALL') && (
+                <button onClick={() => { setSearch(''); setStatusFilter('ALL'); setDangerFilter('ALL'); setTypeFilter('ALL'); }} className="text-xs text-safe-red hover:underline">
+                  Réinitialiser les filtres
+                </button>
+              )}
+            </div>
+          ) : filtered.map(alert => {
+            const isSelected = selectedIds.has(alert.id);
+            const isDeleting = deletingIds.has(alert.id);
+            const isToggling = togglingId === alert.id;
+            const isActive = panelAlert?.id === alert.id;
+            const dangerKey = (alert.dangerLevel || 'MOYEN').toUpperCase();
+            const danger = DANGER_CONFIG[dangerKey] ?? DANGER_CONFIG['MOYEN'];
+
+            return (
+              <div
+                key={alert.id}
+                onClick={() => setPanelAlert(isActive ? null : alert)}
+                className={`grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-3 items-center px-4 py-3 rounded-2xl border cursor-pointer transition-all duration-200 group ${
+                  isActive
+                    ? 'bg-safe-red/5 border-safe-red/40'
+                    : isSelected
+                    ? 'bg-white/5 border-white/20'
+                    : 'bg-safe-card border-safe-border hover:border-safe-red/40 hover:bg-safe-red/3'
+                } ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
+              >
+                {/* Checkbox */}
+                <button onClick={e => toggleSelect(e, alert.id)} className="text-gray-500 hover:text-white transition-colors shrink-0">
+                  {isSelected ? <CheckSquare size={15} className="text-safe-red" /> : <Square size={15} />}
+                </button>
+
+                {/* Identity */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative shrink-0">
+                    <img src={alert.photoUrl} alt={alert.name} className="w-11 h-11 rounded-xl object-cover border border-safe-border" />
+                    <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-safe-card ${alert.status === 'EN COURS' ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-white truncate">{alert.name}</p>
+                    <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                      <MapPin size={10} className="shrink-0" />
+                      {alert.location}
+                    </p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">
+                      {alert.type === 'child_abduction' ? '🔴 Enlèvement' : '🟡 Disparition'} · {alert.age} ans
+                    </p>
+                  </div>
+                </div>
+
+                {/* Danger */}
+                <DangerBadge level={alert.dangerLevel} />
+
+                {/* Status toggle */}
+                <button
+                  onClick={e => handleToggleStatus(e, alert)}
+                  disabled={isToggling}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                    alert.status === 'EN COURS'
+                      ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                      : 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20'
+                  }`}
+                  title="Changer le statut"
+                >
+                  {isToggling
+                    ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    : alert.status === 'EN COURS'
+                    ? <Radio size={12} />
+                    : <CheckCircle2 size={12} />
+                  }
+                  {alert.status === 'EN COURS' ? 'En cours' : 'Résolue'}
+                </button>
+
+                {/* Date */}
+                <div className="text-right hidden xl:block">
+                  <p className="text-xs text-gray-400">{new Date(alert.created_at).toLocaleDateString('fr-FR')}</p>
+                  <p className="text-[10px] text-gray-600">{new Date(alert.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={e => { e.stopPropagation(); navigate(`/admin/edit-alert/${alert.id}`); }}
+                    className="p-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                    title="Modifier"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={e => handleDelete(e, alert.id)}
+                    className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                    title="Supprimer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer count */}
+        {filtered.length > 0 && (
+          <p className="text-xs text-gray-600 text-center pb-2">
+            {filtered.length} alerte{filtered.length > 1 ? 's' : ''} affichée{filtered.length > 1 ? 's' : ''} sur {alerts.length} au total
+          </p>
+        )}
       </div>
+
+      {/* ── Slide-in Detail Panel ── */}
+      {panelAlert && (
+        <div className="hidden lg:flex lg:w-96 shrink-0 flex-col bg-safe-card border border-safe-border rounded-3xl overflow-hidden shadow-2xl animate-in slide-in-from-right duration-200 h-[calc(100vh-12rem)] sticky top-0">
+          {/* Panel header */}
+          <div className="flex justify-between items-center p-4 border-b border-safe-border shrink-0">
+            <span className="text-sm font-bold text-white">Détail de l'alerte</span>
+            <button onClick={() => setPanelAlert(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Photo + Identity */}
+            <div className="relative rounded-2xl overflow-hidden h-36 bg-safe-dark border border-safe-border">
+              <img src={panelAlert.photoUrl} alt={panelAlert.name} className="w-full h-full object-cover opacity-60" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+              <div className="absolute bottom-3 left-3 right-3">
+                <h3 className="font-black text-xl text-white leading-tight">{panelAlert.name}</h3>
+                <p className="text-xs text-gray-300">{panelAlert.type === 'child_abduction' ? '🔴 Enlèvement' : '🟡 Disparition'} · {panelAlert.age} ans</p>
+              </div>
+              <div className="absolute top-3 right-3">
+                <DangerBadge level={panelAlert.dangerLevel} />
+              </div>
+            </div>
+
+            {/* Status */}
+            <div className={`flex items-center justify-between p-3 rounded-xl border ${panelAlert.status === 'EN COURS' ? 'bg-red-500/10 border-red-500/20' : 'bg-green-500/10 border-green-500/20'}`}>
+              <span className="text-xs font-semibold text-gray-400">Statut actuel</span>
+              <span className={`text-sm font-black ${panelAlert.status === 'EN COURS' ? 'text-red-400' : 'text-green-400'}`}>{panelAlert.status}</span>
+            </div>
+
+            {/* Info grid */}
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { icon: Calendar, label: 'Vu le', value: new Date(panelAlert.lastSeen || panelAlert.created_at).toLocaleDateString('fr-FR') },
+                { icon: MapPin, label: 'Lieu', value: panelAlert.location },
+                { icon: Eye, label: 'Yeux', value: panelAlert.eyeColor },
+                { icon: FileText, label: 'Cheveux', value: panelAlert.hairColor },
+              ].map(({ icon: Icon, label, value }) => (
+                <div key={label} className="bg-safe-dark border border-safe-border rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Icon size={11} className="text-gray-500" />
+                    <span className="text-[10px] text-gray-500 uppercase font-bold">{label}</span>
+                  </div>
+                  <p className="text-xs text-white font-semibold truncate">{value || 'N/A'}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Vehicle */}
+            {panelAlert.suspectVehicle && panelAlert.suspectVehicle !== 'Aucun' && (
+              <div className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Car size={12} className="text-orange-400" />
+                  <span className="text-[10px] text-orange-400 uppercase font-bold">Véhicule suspect</span>
+                </div>
+                <p className="text-sm text-white font-semibold">{panelAlert.suspectVehicle}</p>
+              </div>
+            )}
+
+            {/* Description */}
+            {panelAlert.description && (
+              <div className="bg-safe-dark border border-safe-border rounded-xl p-3">
+                <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">Description</p>
+                <p className="text-xs text-gray-300 leading-relaxed">{panelAlert.description}</p>
+              </div>
+            )}
+
+            {/* GPS coords */}
+            <div className="bg-safe-dark border border-safe-border rounded-xl p-3 font-mono">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Crosshair size={11} className="text-gray-500" />
+                <span className="text-[10px] text-gray-500 uppercase font-bold">Coordonnées GPS</span>
+              </div>
+              <p className="text-xs text-green-400">{panelAlert.coordinates.lat.toFixed(6)}, {panelAlert.coordinates.lng.toFixed(6)}</p>
+              <a
+                href={`https://maps.google.com/?q=${panelAlert.coordinates.lat},${panelAlert.coordinates.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-blue-400 hover:underline mt-1 inline-block"
+              >
+                Ouvrir dans Google Maps →
+              </a>
+            </div>
+          </div>
+
+          {/* Panel footer actions */}
+          <div className="p-4 border-t border-safe-border space-y-2 shrink-0">
+            <button
+              onClick={() => navigate(`/alert/${panelAlert.id}`)}
+              className="w-full flex items-center justify-center gap-2 bg-safe-red hover:bg-red-500 text-white text-sm font-bold py-2.5 rounded-xl transition-colors"
+            >
+              <Eye size={15} /> Voir la fiche complète
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => navigate(`/admin/edit-alert/${panelAlert.id}`)}
+                className="flex items-center justify-center gap-1.5 text-xs font-semibold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 py-2 rounded-xl transition-colors"
+              >
+                <Edit2 size={13} /> Modifier
+              </button>
+              <button
+                onClick={e => handleToggleStatus(e as any, panelAlert)}
+                disabled={togglingId === panelAlert.id}
+                className={`flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-xl border transition-colors ${
+                  panelAlert.status === 'EN COURS'
+                    ? 'text-green-400 bg-green-500/10 hover:bg-green-500/20 border-green-500/20'
+                    : 'text-red-400 bg-red-500/10 hover:bg-red-500/20 border-red-500/20'
+                }`}
+              >
+                {panelAlert.status === 'EN COURS' ? <><CheckCircle2 size={13} /> Résoudre</> : <><Radio size={13} /> Rouvrir</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
 
 function AdminReportsView() {
