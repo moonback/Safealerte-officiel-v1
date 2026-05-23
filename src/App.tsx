@@ -13,6 +13,7 @@ import AlertsScreen from './screens/AlertsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import PersonalInfoScreen from './screens/PersonalInfoScreen';
 import TeamsScreen from './screens/TeamsScreen';
+import EditAlertScreen from './screens/EditAlertScreen';
 
 function AppRoutes() {
   const { session, role, loading } = useAuth();
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="/" element={<Navigate to={role === 'admin' ? "/admin" : "/app"} replace />} />
         <Route path="/admin" element={role === 'admin' ? <AdminDashboardScreen /> : <Navigate to="/" replace />} />
         <Route path="/admin/new-alert" element={role === 'admin' ? <NewAlertScreen /> : <Navigate to="/" replace />} />
+        <Route path="/admin/edit-alert/:id" element={role === 'admin' ? <EditAlertScreen /> : <Navigate to="/" replace />} />
         <Route path="/alert/:id" element={<AlertDetailScreen />} />
         <Route path="/teams/:id" element={<TeamsScreen />} />
         {/* Default catch-all for desktop -> admin */}
@@ -78,6 +80,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/admin" element={<AdminDashboardScreen />} />
       <Route path="/admin/new-alert" element={<NewAlertScreen />} />
+      <Route path="/admin/edit-alert/:id" element={<EditAlertScreen />} />
       <Route element={<MobileLayout />}>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/home" element={<HomeScreen />} />

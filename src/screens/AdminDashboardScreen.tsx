@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, Bell, Users, Map as MapIcon, MessageSquare, BarChart, Settings, Clock, Activity, Search, ChevronRight } from 'lucide-react';
+import { Shield, Bell, Users, Map as MapIcon, MessageSquare, BarChart, Settings, Clock, Activity, Search, ChevronRight, Edit2, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAlerts } from '../hooks/useAlerts';
 import MapScreen from './MapScreen';
@@ -149,10 +149,28 @@ function AdminDashboardView({ stats, activities }: any) {
 }
 
 function AdminAlertsView() {
-  const { alerts, loading } = useAlerts();
+  const { alerts, loading, refetch } = useAlerts();
   const navigate = useNavigate();
   if (loading) return <div className="flex justify-center p-10"><div className="animate-spin w-8 h-8 border-4 border-safe-red border-t-transparent rounded-full" /></div>;
   
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer cette alerte ?")) {
+      const { error } = await supabase.from('alerts').delete().eq('id', id);
+      if (error) {
+        alert("Erreur lors de la suppression.");
+        console.error(error);
+      } else {
+        if (refetch) refetch();
+      }
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    navigate(`/admin/edit-alert/${id}`);
+  };
+
   return (
     <div className="bg-safe-card border border-safe-border rounded-3xl p-6 overflow-y-auto">
       <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Bell className="text-safe-red" /> Gestion des Alertes</h2>
@@ -168,7 +186,14 @@ function AdminAlertsView() {
             </div>
             <div className="flex items-center gap-4">
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${alert.status === 'EN COURS' ? 'bg-safe-red/20 text-safe-red' : 'bg-gray-800 text-gray-400'}`}>{alert.status}</span>
-              <ChevronRight className="text-gray-500 group-hover:text-white transition-colors" />
+              <div className="flex items-center gap-2">
+                <button onClick={(e) => handleEdit(e, alert.id)} className="p-2 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500/20 transition-colors" title="Modifier">
+                  <Edit2 size={16} />
+                </button>
+                <button onClick={(e) => handleDelete(e, alert.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors" title="Supprimer">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           </div>
         ))}
