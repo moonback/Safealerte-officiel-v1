@@ -1,9 +1,23 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, User, Car, Eye, HelpCircle, MapPin, Map, Camera, FileVideo, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+
+const reportMarkerIcon = new L.DivIcon({
+  html: `<div class="relative flex h-10 w-10">
+           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-safe-red opacity-40"></span>
+           <span class="relative flex items-center justify-center rounded-full h-10 w-10 bg-safe-red border-2 border-white shadow-xl">
+             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+           </span>
+         </div>`,
+  className: '',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+});
 
 export default function ReportScreen() {
   const navigate = useNavigate();
@@ -108,7 +122,11 @@ export default function ReportScreen() {
       <div className="flex-1">
         <AnimatePresence mode="wait">
           {step === 1 && <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><Step1 onSelect={(type) => { setReportType(type); nextStep(); }} selectedType={reportType} /></motion.div>}
-          {step === 2 && <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><Step2 onNext={nextStep} onGetLocation={() => setCoords({lat: 45.75, lng: 4.85})} hasLocation={!!coords} /></motion.div>}
+          {step === 2 && (
+            <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <Step2 onNext={nextStep} coords={coords} setCoords={setCoords} />
+            </motion.div>
+          )}
           {step === 3 && <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}><Step3 onSubmit={submit} description={description} setDescription={setDescription} clothing={clothing} setClothing={setClothing} direction={direction} setDirection={setDirection} setMediaFiles={setMediaFiles} mediaFiles={mediaFiles} isSubmitting={isSubmitting} /></motion.div>}
         </AnimatePresence>
       </div>
@@ -151,44 +169,193 @@ function Step1({ onSelect, selectedType }: { onSelect: (type: string) => void, s
   );
 }
 
-function Step2({ onNext, onGetLocation, hasLocation }: { onNext: () => void, onGetLocation: () => void, hasLocation: boolean }) {
+function MapEventsHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function MapViewUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom);
+  }, [center, zoom, map]);
+  return null;
+}
+
+function Step2({ 
+  onNext, 
+  coords, 
+  setCoords 
+}: { 
+  onNext: () => void; 
+  coords: { lat: number; lng: number } | null; 
+  setCoords: (coords: { lat: number; lng: number } | null) => void; 
+}) {
+  const [isLocating, setIsLocating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const markerRef = useRef<any>(null);
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setErrorMsg("La géolocalisation n'est pas supportée par votre navigateur.");
+      return;
+    }
+
+    setIsLocating(true);
+    setErrorMsg(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setIsLocating(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        let msg = "Impossible de récupérer votre position.";
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = "Accès à la position refusé. Veuillez autoriser la localisation ou placer le repère manuellement.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = "Informations de localisation indisponibles.";
+        } else if (error.code === error.TIMEOUT) {
+          msg = "Délai d'attente dépassé pour récupérer votre position.";
+        }
+        setErrorMsg(msg);
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const mapCenter: [number, number] = coords ? [coords.lat, coords.lng] : [46.603354, 1.888334];
+  const mapZoom = coords ? 16 : 5;
+
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          const latLng = marker.getLatLng();
+          setCoords({ lat: latLng.lat, lng: latLng.lng });
+        }
+      },
+    }),
+    [setCoords],
+  );
+
   return (
-    <div>
+    <div className="flex flex-col h-full">
       <h2 className="text-2xl font-bold mb-2">Où ?</h2>
-      <p className="text-gray-400 text-sm mb-8">Indiquez l'endroit précis de votre observation.</p>
+      <p className="text-gray-400 text-sm mb-6">Indiquez l'endroit précis de votre observation.</p>
       
-      <div className="space-y-4 mb-8">
+      <div className="space-y-4 mb-6">
         <button 
-          onClick={onGetLocation}
-          className={`w-full ${hasLocation ? 'bg-safe-green border-safe-green' : 'bg-safe-red border-safe-red/50'} border p-4 rounded-2xl flex items-center justify-between text-left text-white transition-colors`}
+          onClick={handleGetCurrentLocation}
+          disabled={isLocating}
+          className={`w-full py-4 px-5 rounded-2xl flex items-center justify-between transition-all duration-300 border shadow-lg cursor-pointer ${
+            coords 
+              ? 'bg-safe-green/20 border-safe-green text-safe-green hover:bg-safe-green/30' 
+              : 'bg-safe-red border-safe-red text-white hover:bg-safe-red-hover active:scale-[0.99]'
+          }`}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-black/20 rounded-lg">
-              <MapPin size={24} />
-            </div>
-            <span className="font-bold">{hasLocation ? "Position capturée !" : "Utiliser ma position actuelle"}</span>
+            {isLocating ? (
+              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <MapPin size={22} className={coords ? 'text-safe-green' : 'text-white'} />
+            )}
+            <span className="font-bold">
+              {isLocating 
+                ? "Recherche de votre position..." 
+                : coords 
+                  ? "✓ Position capturée avec succès !" 
+                  : "Utiliser ma position actuelle"}
+            </span>
           </div>
+          {!isLocating && !coords && (
+            <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full uppercase font-bold tracking-wider">GPS</span>
+          )}
         </button>
-        
-        <button 
-          className="w-full bg-safe-card border border-safe-border p-4 rounded-2xl flex items-center justify-between text-left hover:border-gray-500 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-safe-dark rounded-lg text-gray-400">
-              <Map size={24} />
-            </div>
-            <span className="font-bold">Placer sur la carte manuellement</span>
+
+        {errorMsg && (
+          <div className="bg-safe-red/10 border border-safe-red/30 p-4 rounded-xl text-xs text-safe-red leading-relaxed">
+            {errorMsg}
           </div>
-        </button>
+        )}
       </div>
 
-      {/* Mini map snippet */}
-      <div className="h-40 bg-safe-card border border-safe-border rounded-2xl flex items-center justify-center opacity-50 relative overflow-hidden mb-8">
-        <Map size={32} className="text-gray-600" />
-        <span className="absolute bottom-4 text-xs text-gray-500">Aperçu carte</span>
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Sélection sur la carte</span>
+          {coords && (
+            <button 
+              onClick={() => setCoords(null)}
+              className="text-xs font-semibold text-safe-red hover:underline transition-all cursor-pointer"
+            >
+              Réinitialiser
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mb-3 bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2">
+          <Map size={14} className="text-safe-red shrink-0" />
+          <span>Touchez la carte pour placer le repère, ou glissez le repère rouge pour affiner la position.</span>
+        </p>
+
+        {/* Dynamic Leaflet Map */}
+        <div className="h-64 bg-safe-card border border-safe-border rounded-2xl overflow-hidden relative shadow-inner z-10">
+          <MapContainer 
+            center={mapCenter} 
+            zoom={mapZoom} 
+            style={{ height: '100%', width: '100%', background: '#0a0a0a' }}
+            zoomControl={false}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            />
+            
+            <MapEventsHandler onMapClick={(lat, lng) => setCoords({ lat, lng })} />
+            <MapViewUpdater center={mapCenter} zoom={mapZoom} />
+
+            {coords && (
+              <Marker 
+                draggable={true}
+                eventHandlers={eventHandlers}
+                position={[coords.lat, coords.lng]}
+                ref={markerRef}
+                icon={reportMarkerIcon}
+              />
+            )}
+          </MapContainer>
+        </div>
       </div>
 
-      <button onClick={onNext} className="w-full bg-white text-safe-dark font-bold py-4 rounded-xl active:scale-[0.98] transition-transform">Continuer</button>
+      {coords && (
+        <div className="bg-safe-card border border-safe-border rounded-xl p-3 flex items-center justify-between text-xs font-mono text-gray-400 mb-6">
+          <span className="flex items-center gap-1.5"><MapPin size={12} className="text-safe-green" /> Coordonnées :</span>
+          <span className="text-white bg-black/40 px-2 py-1 rounded border border-white/5">
+            {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+          </span>
+        </div>
+      )}
+
+      <button 
+        onClick={onNext} 
+        disabled={!coords}
+        className={`w-full font-bold py-4 rounded-xl transition-all duration-300 cursor-pointer ${
+          coords 
+            ? 'bg-white text-safe-dark hover:bg-gray-100 active:scale-[0.98]' 
+            : 'bg-safe-card text-gray-600 border border-safe-border cursor-not-allowed'
+        }`}
+      >
+        {coords ? "Continuer" : "Veuillez indiquer un emplacement"}
+      </button>
     </div>
   );
 }
