@@ -6,11 +6,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+import TeamMap from '../components/TeamMap';
+
 export default function TeamsScreen() {
     const navigate = useNavigate();
     const { id } = useParams();
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<'Chat' | 'Infos' | 'Membres'>('Chat');
+    const [activeTab, setActiveTab] = useState<'Chat' | 'Infos' | 'Membres' | 'Carte'>('Chat');
     const [message, setMessage] = useState('');
     const [team, setTeam] = useState<any>(null);
     const [members, setMembers] = useState<any[]>([]);
@@ -134,13 +136,13 @@ export default function TeamsScreen() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex bg-[#121212] p-1 rounded-xl border border-safe-border">
-                    {['Chat', 'Infos', 'Membres'].map(tab => (
+                <div className="flex bg-[#121212] p-1 rounded-xl border border-safe-border overflow-x-auto">
+                    {['Chat', 'Infos', 'Membres', 'Carte'].map(tab => (
                         <button 
                             key={tab}
                             onClick={() => setActiveTab(tab as any)}
                             className={cn(
-                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                "flex-1 min-w-[70px] py-2 text-sm font-bold rounded-lg transition-all",
                                 activeTab === tab ? "bg-safe-card text-white shadow-sm" : "text-gray-500 hover:text-gray-300"
                             )}
                         >
@@ -164,6 +166,7 @@ export default function TeamsScreen() {
                         {activeTab === 'Chat' && <ChatTab teamId={team.id} />}
                         {activeTab === 'Infos' && <InfosTab team={team} />}
                         {activeTab === 'Membres' && <MembresTab members={members} />}
+                        {activeTab === 'Carte' && <div className="w-full h-full"><TeamMap teamId={team.id} /></div>}
                     </motion.div>
                 </AnimatePresence>
             </div>

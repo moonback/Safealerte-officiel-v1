@@ -60,8 +60,13 @@ L'application n'a pas de serveur backend Node.js classique (Express/Nest). Elle 
 1. **PostgreSQL** : Cœur du système. Base de données relationnelle robuste qui stocke utilisateurs, alertes, signalements et équipes.
 2. **PostgREST** : Génère automatiquement l'API REST à partir du schéma PostgreSQL. Le client `@supabase/supabase-js` communique avec cette API.
 3. **Row Level Security (RLS)** : La sécurité est déportée directement dans la base de données. Les requêtes venant du client React sont interceptées et filtrées selon les `Policies` (ex: seul un Admin peut insérer une alerte, un citoyen ne peut voir que ses propres messages s'il n'est pas admin).
-4. **Supabase Realtime** : Exploitation des WebSockets PostgreSQL (via la fonction `postgres_changes`). Permet aux `AdminDashboardScreen` et aux `TeamsScreen` de se mettre à jour instantanément lorsqu'un nouveau signalement ou message est créé, sans rafraîchir la page.
+4. **Supabase Realtime** : Exploitation des WebSockets PostgreSQL (via la fonction `postgres_changes`). Permet aux `AdminDashboardScreen` et aux `TeamsScreen` de se mettre à jour instantanément lorsqu'un nouveau signalement ou message est créé, sans rafraîchir la page. Également utilisé pour le suivi GPS en direct des équipes (`team_locations`).
 5. **Supabase Storage** : Stockage d'objets (S3-compatible) pour les avatars, les photos des alertes, et les médias uploadés par les citoyens lors d'un signalement.
+
+## 🗺️ Coordination d'équipes (Phase 2)
+1. **Géolocalisation Continue** : L'application utilise l'API de géolocalisation pour envoyer la position GPS des membres des équipes (`useGpsReporter`).
+2. **Zones de Recherche (Polygones)** : Les admins utilisent `Leaflet-Draw` pour définir et sauvegarder des zones de recherche dans `search_zones`.
+3. **Mise à jour Realtime** : L'admin peut voir les déplacements des équipes en temps réel sur une carte interactive (`TeamMap.tsx`) branchée au flux Supabase Realtime de `team_locations`.
 
 ## 🔄 Flux de données typique : Signalement Citoyen
 

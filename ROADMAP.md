@@ -1,44 +1,59 @@
-# Roadmap Safe Alert 🚀
+# Roadmap SafeAlert – Vers une efficacité supérieure aux solutions gouvernementales 🚀
 
-Cette roadmap détaille le cheminement de l'application Safe Alert, de son statut actuel de MVP (Minimum Viable Product) robuste jusqu'aux futures itérations prévues en production.
+## Vision
+Offrir une plateforme d'alerte de disparition ultra‑rapide, sécurisée et intelligente, capable de détecter, notifier et coordonner les réponses en temps réel, surpassant les systèmes gouvernementaux classiques en temps de réaction, précision et expérience utilisateur.
 
----
-
-## ✅ Objectifs Complétés (MVP Actuel)
-
-- **Infrastructure de base** : Configuration de Supabase (PostgreSQL, Auth, Storage).
-- **Interface Utilisateur Adaptative** : Responsive design avec redirection "Mobile-First" pour les citoyens et "Desktop-First" pour l'Admin.
-- **Cartographie Interactive** : Intégration de Leaflet avec cartes satellites, marqueurs de géolocalisation, et recherche d'adresses (Nominatim).
-- **Gestion des Alertes (Admin)** : Création, modification et clôture des alertes disparitions. Visualisation en temps réel sur une carte.
-- **Flux de Signalement (Citoyen)** : Processus en 3 étapes permettant à un témoin de remonter une géolocalisation précise et une photo d'indice.
-- **Synchronisation Temps Réel** : Mise à jour du flux d'activités et de la carte admin sans rafraîchissement via Supabase Realtime.
+## Objectifs clés (2026‑2027)
+- **Temps de détection ≤ 2 s** grâce à l’optimisation du traitement d’image et du géocodage. 
+- **Notification géo‑ciblée < 5 s** via push FCM/Expo. 
+- **Coordination d’équipes en temps réel** avec visualisation des zones de recherche et suivi GPS.
+- **Conformité RGPD** assurant la protection des données citoyennes.
 
 ---
 
-## 🏗️ Prochaines Étapes (V1 : Lancement Production)
-
-### 1. Authentification Complète & Profils
-- Déployer l'authentification Supabase (Email/Mot de passe, et SSO Google/Apple) pour remplacer la couche simulée (`AuthContext` actuel).
-- Permettre aux citoyens de configurer des zones de vigilance dans leur profil (ex: "Prévenez-moi si une alerte est déclenchée près de mon domicile").
-
-### 2. Notifications Push Géolocalisées
-- Intégrer les notifications Push (via Firebase Cloud Messaging ou Expo Push Services).
-- Implémenter une Edge Function Supabase déclenchée lors de la création d'une alerte, qui notifie uniquement les téléphones présents dans un rayon de 50km autour du lieu de disparition.
-
-### 3. Gestion Avancée des Équipes (Teams)
-- Permettre à l'Admin d'assigner des zones de recherche précises (dessin de polygones sur la carte) à des équipes spécifiques.
-- Afficher la géolocalisation en temps réel des chefs d'équipe sur la carte de l'Admin via l'API Supabase Broadcast.
+## Phase 1 – Analyse & Baseline (0‑1 mois)
+- **Audit du code** : parcourir `src/` (components, hooks, contexts) pour cartographier l’architecture actuelle.
+- **Inventaire des fonctionnalités** : synthétiser les éléments du MVP décrits dans l’actuel `ROADMAP.md`.
+- **Profilage de performance** : mesurer latence du rendu Leaflet, synchronisation Supabase et téléchargement d’images.
+- **Sécurité** : vérifier les règles Supabase, les permissions de stockage et les politiques de conservation.
+- **Benchmark concurrent** : recenser les spécifications publiques du système d’« alert enlevement du gouvernement » afin d’identifier les écarts de performance et d’expérience.
 
 ---
 
-## 🔮 Vision à Long Terme (V2+)
+## Phase 2 – Améliorations stratégiques (1‑4 mois)
+| Domaine | Cible | Raison |
+|---|---|---|
+| **Auth & Identité** | Supabase Auth + SSO + 2FA | Fiabilité et confiance des utilisateurs |
+| **Push Géolocalisé** | FCM/Expo + Edge‑function déclenchée à 50 km | Alertes instantanées hors applicative |
+| **Gestion d’équipes** | Polygones de recherche, suivi GPS en temps réel | Coordination plus rapide des interventions |
+| **IA Analyse d’images** | Azure Vision / OpenAI CLIP (plaques, visages) | Automatisation de la validation des preuves |
+| **Application native** | Expo React‑Native wrapper | Accès aux capteurs natifs, GPS en arrière‑plan |
+| **Mode Offline** | WatermelonDB ↔ Supabase sync | Opération dans zones sans couverture réseau |
+| **Performance UI** | Lazy‑load tiles, WebGL canvas, compression client‑side | Réduction bande passante, UI fluide |
+| **Observabilité** | Sentry + tableau de bord Supabase métriques | Détection précoce des ralentissements/crash |
+| **Conformité** | Workflow consentement, purge données | Alignement législatif |
 
-### 1. Intelligence Artificielle & Traitement d'Images
-- Intégration d'une API d'analyse d'images pour analyser automatiquement les photos soumises dans les signalements citoyens (détection de visages, lecture de plaques d'immatriculation).
-- Regroupement (Clustering) intelligent des signalements : L'IA détecte si plusieurs citoyens signalent la même voiture dans un secteur précis et remonte l'information en priorité à l'Admin.
+---
 
-### 2. Application Mobile Native
-- Migration partielle ou encapsulage de la PWA React dans React Native (via Expo) pour accéder plus profondément aux capteurs natifs du téléphone (GPS en arrière-plan, Camera native).
+## Phase 3 – Déploiement & Croissance (4‑12 mois)
+1. **V1 (3 mois)** – Auth complète, notifications géo‑ciblées, gestion d’équipes, IA tagging basique. 
+2. **V2 (6 mois)** – Application mobile native, IA clustering avancée, synchronisation offline, analytics admin. 
+3. **V3 (12 mois)** – Intégration API services d’urgence nationaux, support multilingue, déploiement à l’échelle nationale.
 
-### 3. Connectivité Autonome (Offline Mode)
-- Intégration d'une base de données locale (comme WatermelonDB ou RxDB) pour permettre aux équipes de recherche d'utiliser le chat et la carte même dans des zones blanches (sans réseau), avec synchronisation automatique une fois le réseau retrouvé.
+## Métriques de succès
+- **Temps moyen de notification** < 5 s. 
+- **Taux de résolution** > 80 % des alertes en < 30 min. 
+- **Latence UI** < 200 ms pour le rendu carte. 
+- **NPS** 70 auprès des citoyens et des équipes admin.
+
+---
+
+## Avantage compétitif
+En combinant IA d’analyse d’image, push géo‑ciblé et mode offline, SafeAlert réduit le temps de réaction de plusieurs minutes à quelques secondes, surpassant les solutions gouvernementales limitées à des notifications génériques et à une dépendance réseau totale.
+
+## Prochaines étapes immédiates
+- Valider les réponses aux questions ouvertes (benchmark, métriques, contraintes). 
+- Lancer l’audit du code (grep/tree) et établir le backlog initial.
+- Prioriser les tickets GitHub selon les catégories ci‑dessus.
+
+*Roadmap mise à jour le 24 mai 2026*

@@ -41,7 +41,8 @@ Safe Alert est une application citoyenne et un tableau de bord d'administration 
 
 3. **Configuration de la Base de Données (Supabase)**
    - Créez un nouveau projet sur Supabase.
-   - Exécutez le script SQL contenu dans `supabase-schema-phase-1.sql` dans le SQL Editor de Supabase pour créer les tables, les types, et les politiques RLS.
+   - Exécutez le script SQL contenu dans `supabase-schema-phase-1.sql` dans le SQL Editor de Supabase pour créer les tables de base.
+   - Exécutez le script `supabase-schema-phase-2-teams.sql` pour ajouter la gestion en temps réel des équipes (suivi GPS, zones de recherche).
    - Créez manuellement les 3 buckets dans Storage : `avatars` (Public), `alerts` (Public), `reports_media` (Private).
 
 4. **Variables d'environnement**
@@ -79,9 +80,10 @@ npm run build
 │   ├── hooks/              # Custom hooks (useAlerts, etc.)
 │   ├── lib/                # Configurations externes (Supabase client)
 │   ├── screens/            # Vues/Pages de l'application (Admin, Home, Map, etc.)
-│   ├── App.tsx             # Routing principal
+├── App.tsx             # Routing principal
 │   └── main.tsx            # Point d'entrée de l'application
-├── supabase-schema-phase-1.sql # Schéma de la base de données
+├── supabase-schema-phase-1.sql # Schéma de la base de données (MVP)
+├── supabase-schema-phase-2-teams.sql # Migration pour les équipes temps réel
 ├── package.json            # Dépendances et scripts
 └── vite.config.ts          # Configuration Vite
 ```
