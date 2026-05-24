@@ -868,6 +868,10 @@ function AdminReportsView() {
 function AdminTeamsView() {
   const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [selectedAlertId, setSelectedAlertId] = useState('');
+  const { alerts } = useAlerts();
   const navigate = useNavigate();
 
   const fetchTeams = async () => {
@@ -886,17 +890,20 @@ function AdminTeamsView() {
   }, []);
 
   const handleCreateTeam = async () => {
-    const name = window.prompt("Nom de la nouvelle équipe :");
-    if (!name) return;
+    if (!newTeamName) return;
     
     const { data, error } = await supabase.from('teams').insert({
-      name,
+      name: newTeamName,
       status: 'En attente',
-      location: 'Secteur non défini'
+      location: 'Secteur non défini',
+      alert_id: selectedAlertId || null
     }).select().single();
 
     if (!error && data) {
       setTeams([data, ...teams]);
+      setIsCreating(false);
+      setNewTeamName('');
+      setSelectedAlertId('');
     }
   };
 
@@ -906,13 +913,41 @@ function AdminTeamsView() {
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Users className="text-yellow-500" /> Équipes de Recherche
         </h2>
-        <button 
-          onClick={handleCreateTeam}
-          className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/20 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
-        >
-          <Plus size={16} /> Nouvelle équipe
-        </button>
+        {!isCreating && (
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/20 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+          >
+            <Plus size={16} /> Nouvelle équipe
+          </button>
+        )}
       </div>
+
+      {isCreating && (
+        <div className="bg-safe-dark border border-safe-border rounded-2xl p-4 mb-6 flex flex-col gap-3">
+          <input
+            type="text"
+            placeholder="Nom de l'équipe"
+            value={newTeamName}
+            onChange={e => setNewTeamName(e.target.value)}
+            className="bg-safe-card border border-safe-border rounded-xl px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+          />
+          <select
+            value={selectedAlertId}
+            onChange={e => setSelectedAlertId(e.target.value)}
+            className="bg-safe-card border border-safe-border rounded-xl px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+          >
+            <option value="">-- Aucune alerte liée --</option>
+            {alerts.filter(a => a.status === 'EN COURS').map(a => (
+              <option key={a.id} value={a.id}>{a.name} - {a.location}</option>
+            ))}
+          </select>
+          <div className="flex gap-2 justify-end mt-2">
+            <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Annuler</button>
+            <button onClick={handleCreateTeam} className="px-4 py-2 text-sm font-bold bg-yellow-500 text-black rounded-xl hover:bg-yellow-400 transition-colors">Créer l'équipe</button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex-1 flex justify-center items-center">

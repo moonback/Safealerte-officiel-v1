@@ -9,11 +9,11 @@ export default function HomeScreen() {
   const navigate = useNavigate();
   const { alerts, loading } = useAlerts();
   const [activity, setActivity] = useState<any[]>([]);
+  const [activeTeams, setActiveTeams] = useState<any[]>([]);
   
   const mainAlert = alerts[0];
 
   useEffect(() => {
-    // Fetch some recent reports for activity
     const fetchActivity = async () => {
       const { data } = await supabase
         .from('reports')
@@ -25,7 +25,18 @@ export default function HomeScreen() {
         setActivity(data);
       }
     };
+    
+    const fetchTeams = async () => {
+      const { data } = await supabase
+        .from('teams')
+        .select('*, team_members(count)')
+        .order('created_at', { ascending: false })
+        .limit(3);
+      if (data) setActiveTeams(data);
+    };
+
     fetchActivity();
+    fetchTeams();
 
     const channel = supabase.channel('public:reports')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, payload => {
@@ -133,6 +144,45 @@ export default function HomeScreen() {
           </div>
           <span className="text-sm font-medium">Conseils</span>
         </button>
+      </div>
+
+      {/* Équipes Actives */}
+      <div className="px-5 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold">Équipes de recherche</h3>
+        </div>
+        
+        <div className="space-y-3">
+          {activeTeams.length === 0 ? (
+             <div className="bg-safe-card border border-safe-border p-4 rounded-xl text-center text-gray-500 text-sm">
+                Aucune équipe de recherche active pour le moment.
+             </div>
+          ) : activeTeams.map(team => (
+            <div 
+              key={team.id} 
+              onClick={() => navigate(`/teams/${team.id}`)}
+              className="bg-safe-card p-4 rounded-xl border border-safe-border flex gap-3 items-center cursor-pointer active:bg-safe-dark transition-colors"
+            >
+              <div className="w-10 h-10 rounded-full bg-yellow-500/10 text-yellow-500 flex items-center justify-center font-bold">
+                {team.name.substring(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-white truncate">{team.name}</p>
+                <p className="text-xs text-gray-400 truncate">{team.location || 'Secteur non défini'}</p>
+              </div>
+              <div className="text-right">
+                <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${
+                  team.status === 'En attente' ? 'bg-gray-500/20 text-gray-400' :
+                  team.status === 'En intervention' ? 'bg-red-500/20 text-red-400' :
+                  'bg-green-500/20 text-green-400'
+                }`}>
+                  {team.status}
+                </span>
+                <p className="text-xs text-gray-500 mt-1">{team.team_members?.[0]?.count || 0} membres</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Actualités */}

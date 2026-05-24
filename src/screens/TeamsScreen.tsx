@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, Phone, MapPin, Check, CheckCheck, Mic, Image as ImageIcon, Send, Paperclip } from 'lucide-react';
+import { ArrowLeft, Search, Filter, Phone, AlertTriangle, Link, MapPin, Check, CheckCheck, Mic, Image as ImageIcon, Send, Paperclip, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
@@ -28,12 +28,12 @@ export default function TeamsScreen() {
                 // Fetch team
                 const { data: teamData, error: teamErr } = await supabase
                     .from('teams')
-                    .select('*')
+                    .select('*, alerts(id, victim_name)')
                     .eq('id', id)
                     .single();
-                
+
                 if (teamErr) throw teamErr;
-                
+
                 // Fetch members
                 const { data: membersData, error: memErr } = await supabase
                     .from('team_members')
@@ -72,6 +72,28 @@ export default function TeamsScreen() {
         }
     };
 
+    const handleJoinTeam = async () => {
+        if (!user || !team) return;
+        setIsSending(true);
+        try {
+            await supabase.from('team_members').insert({
+                team_id: team.id,
+                user_id: user.id,
+                is_leader: false
+            });
+            // Refetch members
+            const { data } = await supabase.from('team_members').select('*, users(name, avatar_url)').eq('team_id', team.id);
+            if (data) setMembers(data);
+        } catch (e) {
+            console.error("Error joining team", e);
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    const isMember = members.some(m => m.user_id === user?.id) || user?.role === 'admin';
+
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || !e.target.files[0] || !user || !team) return;
         const file = e.target.files[0];
@@ -84,12 +106,12 @@ export default function TeamsScreen() {
                 .upload(fileName, file);
 
             if (!uploadError && data) {
-               const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-               await supabase.from('messages').insert({
-                   team_id: team.id,
-                   user_id: user.id,
-                   media_url: publicData.publicUrl
-               });
+                const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+                await supabase.from('messages').insert({
+                    team_id: team.id,
+                    user_id: user.id,
+                    media_url: publicData.publicUrl
+                });
             }
         } catch (error) {
             console.error(error);
@@ -126,7 +148,14 @@ export default function TeamsScreen() {
                                     {team.status || 'Actif'}
                                 </span>
                             </h1>
-                            <span className="text-xs text-gray-400 font-medium">{members.length} membres • {team.location || 'Sur zone'}</span>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-gray-400 font-medium">{members.length} membres • {team.location || 'Sur zone'}</span>
+                                {team.alerts && (
+                                    <span className="text-xs font-bold text-safe-red mt-0.5">
+                                        Liée à l'alerte: {team.alerts.victim_name}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
@@ -138,7 +167,7 @@ export default function TeamsScreen() {
                 {/* Tabs */}
                 <div className="flex bg-[#121212] p-1 rounded-xl border border-safe-border overflow-x-auto">
                     {['Chat', 'Infos', 'Membres', 'Carte'].map(tab => (
-                        <button 
+                        <button
                             key={tab}
                             onClick={() => setActiveTab(tab as any)}
                             className={cn(
@@ -173,54 +202,66 @@ export default function TeamsScreen() {
 
             {/* Chat Input Area (only visible when Chat is active) */}
             {activeTab === 'Chat' && (
-                <div className="bg-safe-card border-t border-safe-border px-4 py-3 pb-safe flex items-end gap-2 z-10">
-                    <button className="p-2.5 text-gray-400 rounded-full hover:bg-safe-dark mb-0.5 shrink-0 transition-colors">
-                        <Paperclip size={22} />
-                    </button>
-                    <div className="flex-1 bg-safe-dark border border-safe-border rounded-2xl flex items-end min-h-[48px] focus-within:border-gray-500 transition-colors">
-                        <textarea 
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSendMessage();
-                                }
-                            }}
-                            placeholder="Message..."
-                            className="bg-transparent flex-1 resize-none outline-none text-sm text-white px-4 py-3 max-h-32 min-h-[48px] disabled:opacity-50"
-                            rows={message.split('\n').length > 1 ? Math.min(message.split('\n').length, 5) : 1}
+                <div className="bg-safe-card border-t border-safe-border px-4 py-3 pb-safe flex flex-col gap-2 z-10">
+                    {!isMember ? (
+                        <button
+                            onClick={handleJoinTeam}
                             disabled={isSending}
-                        />
-                        <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                        />
-                        <button 
-                            disabled={isSending}
-                            onClick={() => fileInputRef.current?.click()}
-                            className="p-3 text-safe-red shrink-0 hover:text-safe-red-hover transition-colors disabled:opacity-50"
+                            className="w-full bg-safe-red hover:bg-safe-red-hover text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                         >
-                            <ImageIcon size={22} />
+                            Rejoindre l'équipe pour participer
                         </button>
-                    </div>
-                    {message.trim() ? (
-                        <motion.button 
-                            onClick={handleSendMessage}
-                            disabled={isSending}
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="bg-safe-red w-12 h-12 rounded-full flex items-center justify-center text-white shrink-0 mb-0.5 shadow-lg active:scale-95 transition-transform disabled:opacity-50"
-                        >
-                            <Send size={20} className="translate-x-0.5" />
-                        </motion.button>
                     ) : (
-                        <button className="bg-safe-card border border-safe-border w-12 h-12 rounded-full flex items-center justify-center text-gray-400 shrink-0 mb-0.5 hover:text-white hover:bg-safe-dark transition-all">
-                            <Mic size={22} />
-                        </button>
+                        <div className="flex items-end gap-2 w-full">
+                            <button className="p-2.5 text-gray-400 rounded-full hover:bg-safe-dark mb-0.5 shrink-0 transition-colors">
+                                <Paperclip size={22} />
+                            </button>
+                            <div className="flex-1 bg-safe-dark border border-safe-border rounded-2xl flex items-end min-h-[48px] focus-within:border-gray-500 transition-colors">
+                                <textarea
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleSendMessage();
+                                        }
+                                    }}
+                                    placeholder="Message..."
+                                    className="bg-transparent flex-1 resize-none outline-none text-sm text-white px-4 py-3 max-h-32 min-h-[48px] disabled:opacity-50"
+                                    rows={message.split('\n').length > 1 ? Math.min(message.split('\n').length, 5) : 1}
+                                    disabled={isSending}
+                                />
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    ref={fileInputRef}
+                                    onChange={handleFileChange}
+                                />
+                                <button
+                                    disabled={isSending}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-3 text-safe-red shrink-0 hover:text-safe-red-hover transition-colors disabled:opacity-50"
+                                >
+                                    <ImageIcon size={22} />
+                                </button>
+                            </div>
+                            {message.trim() ? (
+                                <motion.button
+                                    onClick={handleSendMessage}
+                                    disabled={isSending}
+                                    initial={{ scale: 0.8, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    className="bg-safe-red w-12 h-12 rounded-full flex items-center justify-center text-white shrink-0 mb-0.5 shadow-lg active:scale-95 transition-transform disabled:opacity-50"
+                                >
+                                    <Send size={20} className="translate-x-0.5" />
+                                </motion.button>
+                            ) : (
+                                <button className="bg-safe-card border border-safe-border w-12 h-12 rounded-full flex items-center justify-center text-gray-400 shrink-0 mb-0.5 hover:text-white hover:bg-safe-dark transition-all">
+                                    <Mic size={22} />
+                                </button>
+                            )}
+                        </div>
                     )}
                 </div>
             )}
@@ -265,16 +306,16 @@ function ChatTab({ teamId }: { teamId: string }) {
                     Démarrage de la mission
                 </span>
             </div>
-            
+
             {messages.length === 0 ? (
                 <div className="text-center text-gray-500 mt-4 text-sm">Aucun message pour le moment.</div>
             ) : (
                 messages.map(msg => (
-                    <MessageBubble 
+                    <MessageBubble
                         key={msg.id}
                         text={msg.content}
                         image={msg.media_url}
-                        time={new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        time={new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         isMe={msg.user_id === user?.id}
                         sender={msg.users?.name || 'Inconnu'}
                         avatar={(msg.users?.name || 'I').charAt(0)}
@@ -295,7 +336,7 @@ function MessageBubble({ text, time, isMe, sender, avatar, image }: any) {
                         {avatar}
                     </div>
                 )}
-                
+
                 <div className={cn(
                     "flex flex-col p-3.5 rounded-2xl relative shadow-sm",
                     isMe ? "bg-safe-green text-white rounded-br-sm" : "bg-white text-safe-dark rounded-bl-sm"
@@ -320,43 +361,65 @@ function MessageBubble({ text, time, isMe, sender, avatar, image }: any) {
 function InfosTab({ team }: any) {
     return (
         <div className="h-full overflow-y-auto p-6 space-y-6 pb-12">
-            <div className="bg-safe-card border border-safe-border rounded-2xl p-5 shadow-lg">
-                <h3 className="text-xs font-black text-gray-500 mb-5 uppercase tracking-widest">Détails de la mission</h3>
-                <div className="space-y-5">
-                    <div className="flex gap-4">
-                        <div className="mt-1"><MapPin size={22} className="text-safe-red" /></div>
+            <div className="bg-safe-card border border-safe-border rounded-2xl p-5 shadow-lg space-y-6">
+                {/* Alert liée */}
+                {team.alerts && (
+                    <div className="flex items-center gap-3">
+                        <AlertTriangle size={20} className="text-safe-red" />
                         <div>
-                            <span className="block text-base font-bold text-white mb-0.5">{team.location || 'Secteur non défini'}</span>
-                            <span className="text-sm font-medium text-gray-400">Zone assignée pour la recherche.</span>
+                            <span className="block text-base font-bold text-white">Alerte liée</span>
+                            <Link
+                                to={`/alert/${team.alerts.id}`}
+                                className="text-sm font-medium text-safe-red hover:underline"
+                            >
+                                {team.alerts.victim_name}
+                            </Link>
                         </div>
                     </div>
-                    <div className="w-full h-px bg-safe-border" />
-                    <div className="flex gap-4">
-                        <div className="mt-1"><Check size={22} className="text-safe-green" /></div>
-                        <div>
-                            <span className="block text-base font-bold text-white mb-0.5">Statut</span>
-                            <span className="text-sm font-medium text-gray-400 capitalize">{team.status || 'En attente'}</span>
-                        </div>
+                )}
+                {/* Status & Membres */}
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-safe-dark p-3 rounded-xl border border-safe-border">
+                        <span className="block text-[10px] text-gray-500 uppercase">Statut</span>
+                        <span className="text-sm font-bold text-white capitalize">{team.status}</span>
                     </div>
+                    <div className="bg-safe-dark p-3 rounded-xl border border-safe-border">
+                        <span className="block text-[10px] text-gray-500 uppercase">Membres</span>
+                        <span className="text-sm font-bold text-white">{team.team_members?.[0]?.count || 0}</span>
+                    </div>
+                </div>
+                {/* Location */}
+                <div className="flex items-center gap-4 text-sm text-gray-400">
+                    <MapPin size={16} />
+                    <span>{team.location || 'Localisation non spécifiée'}</span>
+                </div>
+                {/* Creation date */}
+                <div className="flex items-center gap-4 text-sm text-gray-400">
+                    <Calendar size={16} />
+                    <span>Créée le {new Date(team.created_at).toLocaleDateString('fr-FR')}</span>
+                </div>
+                {/* Mini map preview */}
+                <div className="mt-4 rounded-xl overflow-hidden border border-safe-border h-32">
+                    <TeamMap teamId={team.id} />
                 </div>
             </div>
         </div>
-    )
+    );
 }
 
 function MembresTab({ members }: { members: any[] }) {
     return (
         <div className="h-full overflow-y-auto p-6 space-y-4 pb-12">
             <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest px-1">Membres ({members.length})</h3>
-            
+
             <div className="space-y-3">
                 {members.map(member => (
-                    <MemberCard 
+                    <MemberCard
                         key={member.user_id}
-                        name={member.users?.name || 'Inconnu'} 
-                        role={member.is_leader ? "Chef d'équipe" : "Bénévole"} 
-                        initial={(member.users?.name || 'I').charAt(0)} 
-                        isLeader={member.is_leader} 
+                        name={member.users?.name || 'Inconnu'}
+                        role={member.is_leader ? "Chef d'équipe" : "Bénévole"}
+                        initial={(member.users?.name || 'I').charAt(0)}
+                        isLeader={member.is_leader}
                     />
                 ))}
                 {members.length === 0 && (
