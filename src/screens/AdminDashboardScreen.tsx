@@ -867,30 +867,108 @@ function AdminReportsView() {
 
 function AdminTeamsView() {
   const [teams, setTeams] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const fetchTeams = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('teams')
+      .select('*, team_members(count)')
+      .order('created_at', { ascending: false });
+    
+    setTeams(data || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    supabase.from('teams').select('*').order('created_at', { ascending: false }).then(({data}) => setTeams(data || []));
+    fetchTeams();
   }, []);
 
+  const handleCreateTeam = async () => {
+    const name = window.prompt("Nom de la nouvelle équipe :");
+    if (!name) return;
+    
+    const { data, error } = await supabase.from('teams').insert({
+      name,
+      status: 'En attente',
+      location: 'Secteur non défini'
+    }).select().single();
+
+    if (!error && data) {
+      setTeams([data, ...teams]);
+    }
+  };
+
   return (
-    <div className="bg-safe-card border border-safe-border rounded-3xl p-6 overflow-y-auto">
-      <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Users className="text-yellow-500" /> Équipes de Recherche</h2>
-      <div className="space-y-4">
-        {teams.map(team => (
-          <div key={team.id} onClick={() => navigate(`/teams/${team.id}`)} className="flex items-center justify-between p-4 bg-safe-dark border border-safe-border rounded-2xl cursor-pointer hover:border-yellow-500 transition-colors group">
-            <div className="flex gap-4 items-center">
-              <div className="w-12 h-12 bg-yellow-500/20 text-yellow-500 rounded-xl flex items-center justify-center font-bold text-xl uppercase">
-                {team.name.substring(0, 2)}
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-lg">{team.name}</h3>
-                <p className="text-sm text-gray-400">{team.status}</p>
-              </div>
-            </div>
-            <ChevronRight className="text-gray-500 group-hover:text-white transition-colors" />
-          </div>
-        ))}
+    <div className="bg-safe-card border border-safe-border rounded-3xl p-6 overflow-y-auto flex flex-col h-full">
+      <div className="flex items-center justify-between mb-6 shrink-0">
+        <h2 className="text-xl font-bold flex items-center gap-2">
+          <Users className="text-yellow-500" /> Équipes de Recherche
+        </h2>
+        <button 
+          onClick={handleCreateTeam}
+          className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/20 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+        >
+          <Plus size={16} /> Nouvelle équipe
+        </button>
       </div>
+
+      {loading ? (
+        <div className="flex-1 flex justify-center items-center">
+          <div className="animate-spin w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {teams.length === 0 ? (
+            <div className="col-span-full text-center py-10 text-gray-500">
+              Aucune équipe de recherche pour le moment.
+            </div>
+          ) : (
+            teams.map(team => (
+              <div 
+                key={team.id} 
+                onClick={() => navigate(`/teams/${team.id}`)} 
+                className="flex flex-col p-5 bg-safe-dark border border-safe-border rounded-2xl cursor-pointer hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all group relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-500/5 rounded-full blur-2xl group-hover:bg-yellow-500/10 transition-colors pointer-events-none" />
+                
+                <div className="flex items-start justify-between mb-4 z-10">
+                  <div className="flex gap-3 items-center">
+                    <div className="w-12 h-12 bg-safe-card border border-safe-border text-yellow-500 rounded-xl flex items-center justify-center font-black text-xl uppercase shadow-sm">
+                      {team.name.substring(0, 2)}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white text-base leading-tight">{team.name}</h3>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1 inline-block ${
+                        team.status === 'En attente' ? 'bg-gray-500/20 text-gray-400' :
+                        team.status === 'En intervention' ? 'bg-red-500/20 text-red-400' :
+                        'bg-green-500/20 text-green-400'
+                      }`}>
+                        {team.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-auto z-10">
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <MapPin size={14} className="text-gray-500" />
+                    <span className="truncate">{team.location || 'Aucun secteur assigné'}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-400">
+                    <div className="flex items-center gap-2">
+                      <Users size={14} className="text-gray-500" />
+                      <span>{team.team_members?.[0]?.count || 0} membres</span>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-600 group-hover:text-yellow-500 transition-colors" />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
